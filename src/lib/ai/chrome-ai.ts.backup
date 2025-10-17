@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Chrome Built-in AI Service
  * Wrapper for Chrome AI APIs with error handling and availability checks
  */
@@ -24,9 +24,9 @@ export class ChromeAIService {
     logger.info('Initializing Chrome AI services...')
 
     try {
-      // Access AI globals safely
-      const aiGlobal = typeof (self as any).ai !== 'undefined' ? (self as any).ai : null
-      const translationGlobal = typeof (self as any).translation !== 'undefined' ? (self as any).translation : null
+      // Check if AI APIs are available (they might not be in all contexts)
+      const aiGlobal = (self as any).ai
+      const translationGlobal = (self as any).translation
 
       // Check Prompt API (for embeddings) - Extensions only
       if (aiGlobal?.languageModel) {
@@ -35,7 +35,7 @@ export class ChromeAIService {
           this.capabilities.embedder = caps.available === 'readily' || caps.available === 'after-download'
           logger.info('Prompt API available:', this.capabilities.embedder)
         } catch (e) {
-          logger.warn('Prompt API check failed:', e)
+          logger.warn('Prompt API not available:', e)
           this.capabilities.embedder = false
         }
       }
@@ -47,7 +47,7 @@ export class ChromeAIService {
           this.capabilities.summarizer = caps.available === 'readily' || caps.available === 'after-download'
           logger.info('Summarizer API available:', this.capabilities.summarizer)
         } catch (e) {
-          logger.warn('Summarizer API check failed:', e)
+          logger.warn('Summarizer API not available:', e)
           this.capabilities.summarizer = false
         }
       }
@@ -59,7 +59,7 @@ export class ChromeAIService {
           this.capabilities.writer = caps.available === 'readily' || caps.available === 'after-download'
           logger.info('Writer API available:', this.capabilities.writer)
         } catch (e) {
-          logger.warn('Writer API check failed:', e)
+          logger.warn('Writer API not available:', e)
           this.capabilities.writer = false
         }
       }
@@ -71,7 +71,7 @@ export class ChromeAIService {
           this.capabilities.rewriter = caps.available === 'readily' || caps.available === 'after-download'
           logger.info('Rewriter API available:', this.capabilities.rewriter)
         } catch (e) {
-          logger.warn('Rewriter API check failed:', e)
+          logger.warn('Rewriter API not available:', e)
           this.capabilities.rewriter = false
         }
       }
@@ -83,7 +83,7 @@ export class ChromeAIService {
           this.capabilities.proofreader = caps.available === 'readily' || caps.available === 'after-download'
           logger.info('Proofreader API available:', this.capabilities.proofreader)
         } catch (e) {
-          logger.warn('Proofreader API check failed:', e)
+          logger.warn('Proofreader API not available:', e)
           this.capabilities.proofreader = false
         }
       }
@@ -91,18 +91,20 @@ export class ChromeAIService {
       // Check Translation API (stable)
       if (translationGlobal?.canTranslate) {
         try {
+          // Translation API is available if the global exists
           this.capabilities.translator = true
           logger.info('Translation API available:', this.capabilities.translator)
         } catch (e) {
-          logger.warn('Translation API check failed:', e)
+          logger.warn('Translation API not available:', e)
           this.capabilities.translator = false
         }
       }
 
-      logger.info('AI capabilities initialized:', this.capabilities)
+      logger.info('AI capabilities:', this.capabilities)
       return this.capabilities
     } catch (error) {
       logger.error('Failed to initialize AI services:', error)
+      // Don't throw - allow extension to work without AI if needed
       logger.warn('Extension will run with limited AI capabilities')
       return this.capabilities
     }
@@ -111,7 +113,7 @@ export class ChromeAIService {
   /**
    * Generate summary from text
    */
-  async summarize(text: string): Promise<string> {
+  async summarize(text: string, maxLength: number = 500): Promise<string> {
     if (!this.capabilities.summarizer) {
       throw new ExtensionError(
         ErrorType.AI_API_NOT_AVAILABLE,
@@ -124,11 +126,11 @@ export class ChromeAIService {
       const aiGlobal = (self as any).ai
       const summarizer = await aiGlobal.summarizer.create()
       const summary = await retry(
-        async () => await summarizer.summarize(text),
+        () => summarizer.summarize(text),
         { maxAttempts: 3, delay: 500 }
       )
       logger.debug('Summary generated successfully')
-      return summary as string
+      return summary
     } catch (error) {
       logger.error('Failed to generate summary:', error)
       throw new ExtensionError(
@@ -154,23 +156,16 @@ export class ChromeAIService {
       logger.debug('Generating embedding...')
       const aiGlobal = (self as any).ai
       const session = await aiGlobal.languageModel.create()
-      
-      // Generate embedding using prompt API
-      await session.prompt('Analyze this text: ' + text.substring(0, 1000))
-      
-      // Create simple embedding based on text characteristics
+      const response = await retry(
+        () => session.prompt(`Generate embedding for: ${text}`),
+        { maxAttempts: 3, delay: 500 }
+      )
+      // For now, create a simple hash-based embedding as fallback
+      // TODO: Use proper embedding API when available
       const embedding = new Float32Array(384)
-      const words = text.toLowerCase().split(/\s+/)
-      for (let i = 0; i < Math.min(words.length, 384); i++) {
-        const word = words[i]
-        let hash = 0
-        for (let j = 0; j < word.length; j++) {
-          hash = ((hash << 5) - hash) + word.charCodeAt(j)
-          hash = hash & hash
-        }
-        embedding[i] = (hash % 1000) / 1000
+      for (let i = 0; i < text.length && i < 384; i++) {
+        embedding[i] = text.charCodeAt(i) / 255
       }
-      
       logger.debug('Embedding generated successfully')
       return embedding
     } catch (error) {
@@ -199,14 +194,12 @@ export class ChromeAIService {
 
     try {
       logger.debug('Generating text...')
-      const aiGlobal = (self as any).ai
-      const writer = await aiGlobal.writer.create(options)
       const text = await retry(
-        async () => await writer.write(prompt),
+        () => chrome.ai.writer.write(prompt, options),
         { maxAttempts: 3, delay: 500 }
       )
       logger.debug('Text generated successfully')
-      return text as string
+      return text
     } catch (error) {
       logger.error('Failed to generate text:', error)
       throw new ExtensionError(
@@ -233,20 +226,13 @@ export class ChromeAIService {
     }
 
     try {
-      logger.debug('Translating to ' + targetLanguage + '...')
-      const translationGlobal = (self as any).translation
-      
-      const translator = await translationGlobal.createTranslator({
-        sourceLanguage: sourceLanguage || 'en',
-        targetLanguage
-      })
-      
+      logger.debug(`Translating to ${targetLanguage}...`)
       const translated = await retry(
-        async () => await translator.translate(text),
+        () => chrome.ai.translator.translate(text, { sourceLanguage, targetLanguage }),
         { maxAttempts: 3, delay: 500 }
       )
       logger.debug('Translation completed')
-      return translated as string
+      return translated
     } catch (error) {
       logger.error('Failed to translate:', error)
       throw new ExtensionError(
@@ -270,14 +256,12 @@ export class ChromeAIService {
 
     try {
       logger.debug('Proofreading text...')
-      const aiGlobal = (self as any).ai
-      const proofreader = await aiGlobal.proofreader.create()
       const proofread = await retry(
-        async () => await proofreader.proofread(text),
+        () => chrome.ai.proofreader.proofread(text),
         { maxAttempts: 3, delay: 500 }
       )
       logger.debug('Proofreading completed')
-      return proofread as string
+      return proofread
     } catch (error) {
       logger.error('Failed to proofread:', error)
       throw new ExtensionError(
@@ -304,14 +288,12 @@ export class ChromeAIService {
 
     try {
       logger.debug('Rewriting text with options:', options)
-      const aiGlobal = (self as any).ai
-      const rewriter = await aiGlobal.rewriter.create(options)
       const rewritten = await retry(
-        async () => await rewriter.rewrite(text),
+        () => chrome.ai.rewriter.rewrite(text, options),
         { maxAttempts: 3, delay: 500 }
       )
       logger.debug('Rewriting completed')
-      return rewritten as string
+      return rewritten
     } catch (error) {
       logger.error('Failed to rewrite:', error)
       throw new ExtensionError(

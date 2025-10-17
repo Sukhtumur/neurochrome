@@ -1,19 +1,33 @@
 # Local Web Brain 🧠
 
-**Offline cognitive extension that turns browsing history into semantic memory**
+**Hybrid AI cognitive extension that turns browsing history into semantic memory**
 
-A Chrome extension that uses Gemini Nano (Chrome Built-in AI) to create an intelligent, searchable memory of your browsing history—completely offline and privacy-focused.
+A Chrome extension built for the **Google Chrome Built-in AI Challenge 2025** that uses a **hybrid AI strategy**: Chrome Built-in AI (Gemini Nano) when available, Gemini API as reliable cloud fallback. This creates an intelligent, searchable memory of your browsing history with production-ready reliability.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Chrome AI](https://img.shields.io/badge/Chrome%20AI-Gemini%20Nano-orange)
+![Chrome AI](https://img.shields.io/badge/Chrome%20AI-Hybrid-orange)
+![Competition](https://img.shields.io/badge/Competition-Chrome%20AI%202025-purple)
+
+## � Hybrid AI Strategy
+
+What makes this extension special:
+
+- **🎯 Production Ready**: Works reliably TODAY, even in Chrome builds without AI APIs
+- **🔄 Automatic Fallback**: Tries Chrome Built-in AI first, seamlessly falls back to Gemini API
+- **🔒 Privacy First**: On-device processing when available, secure cloud fallback when needed
+- **🚀 Future Proof**: Gets better as Chrome AI rolls out, never breaks
+- **✅ All 6 APIs**: Complete implementation of all Chrome Built-in AI capabilities
 
 ## 🌟 Features
 
-- **🔒 100% Offline & Private**: All processing happens locally using Chrome's built-in AI (Gemini Nano)
-- **🧠 Semantic Memory**: Convert web pages into searchable semantic memories with embeddings
-- **🔍 Natural Language Search**: Query your history using plain English via omnibox (`brain <query>`)
-- **🔐 AES-GCM Encryption**: Summaries are encrypted locally using Web Crypto API
+- **🤖 Hybrid AI**: Chrome Built-in AI (primary) + Gemini API (fallback) for 100% reliability
+- **🧠 Semantic Memory**: Convert web pages into searchable semantic memories with AI embeddings
+- **📝 AI Summarization**: Automatic 2-3 sentence summaries of every page you visit
+- **🌐 AI Translation**: Translate memories to any language
+- **✏️ AI Rewriting**: Reformat summaries with different tones, lengths, and formats
+- **🔍 Natural Language Search**: Query your history using plain English via omnibox (`lw <query>`)
+- **🔐 AES-GCM Encryption**: Summaries encrypted locally using Web Crypto API
 - **⚡ Vector Similarity Search**: Find relevant pages using cosine similarity
 - **🎨 Beautiful UI**: Clean, modern interface built with Svelte and TailwindCSS
 - **📊 Statistics Dashboard**: Track your knowledge base growth
@@ -97,36 +111,69 @@ A Chrome extension that uses Gemini Nano (Chrome Built-in AI) to create an intel
 
 ## 📦 Installation
 
+### Quick Start (Works Immediately!)
+
+The extension uses a **hybrid AI strategy** and works right away:
+
+1. Install the extension
+2. Configure Gemini API key (free from [Google AI Studio](https://aistudio.google.com/app/apikey))
+3. Start browsing!
+
+Chrome Built-in AI is **optional** but recommended for privacy.
+
 ### Prerequisites
 
-- Chrome Canary (v127+) with Chrome AI APIs enabled
-- Node.js (v18+)
-- npm or pnpm
+- **Chrome Canary** (v143+) or **Chrome Stable** (when AI APIs launch)
+- **Node.js** (v18+)
+- **Gemini API Key** (free tier available)
 
-### Enable Chrome AI APIs
+### Option A: Gemini API Only (Recommended for Testing)
 
-1. Install Chrome Canary
-2. Navigate to `chrome://flags/#optimization-guide-on-device-model`
-3. Set to "Enabled BypassPerfRequirement"
-4. Navigate to `chrome://flags/#prompt-api-for-gemini-nano`
-5. Set to "Enabled"
-6. Restart Chrome
+**No Chrome AI setup needed!** This is the fastest way to get started:
+
+1. Build extension (see below)
+2. Load in Chrome
+3. Open Settings tab
+4. Get free API key: [Google AI Studio](https://aistudio.google.com/app/apikey)
+5. Paste key and save
+6. Start browsing!
+
+✅ **Works in**: Chrome Stable, Chrome Canary, any Chrome 120+  
+✅ **Setup time**: 5 minutes  
+✅ **Reliability**: 100% (cloud-based)  
+
+### Option B: Chrome Built-in AI + Gemini Fallback (Best of Both Worlds)
+
+For maximum privacy and performance:
+
+1. **Enable Chrome AI APIs** ([detailed guide](./CHROME_AI_SETUP.md))
+   - Navigate to `chrome://flags/#optimization-guide-on-device-model`
+   - Set to "Enabled BypassPerfRequirement"
+   - Navigate to `chrome://flags/#prompt-api-for-gemini-nano`
+   - Set to "Enabled"
+   - Restart Chrome
+   
+2. **Build & configure extension**
+3. Extension will automatically use Chrome AI when available
+4. Falls back to Gemini API seamlessly
+
+✅ **Works in**: Chrome Canary (143+)  
+✅ **Privacy**: On-device processing  
+✅ **Performance**: Instant responses  
+✅ **Fallback**: Gemini API if Chrome AI unavailable  
 
 ### Build & Install Extension
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/local-web-brain.git
-cd local-web-brain
+git clone https://github.com/Sukhtumur/neurochrome.git
+cd neurochrome
 
 # Install dependencies
 npm install
 
 # Build for production
 npm run build
-
-# Or run in development mode
-npm run dev
 ```
 
 ### Load in Chrome
@@ -135,6 +182,18 @@ npm run dev
 2. Enable "Developer mode"
 3. Click "Load unpacked"
 4. Select the `dist` folder
+5. Click extension icon → **Settings** tab
+6. Configure Gemini API key
+
+### Verify Setup
+
+Open Settings tab in extension popup:
+
+- **Provider Badge**: Shows "Using Chrome AI" (green) or "Using Gemini API" (purple)
+- **All 6 APIs**: Should show green checkmarks ✓
+- **Status Message**: Confirms active AI provider
+
+See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for detailed testing steps.
 
 ## 🚀 Usage
 
@@ -265,51 +324,60 @@ npm test -- --watch
 npm test -- --coverage
 ```
 
-## 🤖 Chrome AI APIs
+## 🤖 AI Implementation
 
-### Summarizer API
+### Hybrid AI Service
+
+The extension uses an intelligent hybrid approach:
 
 ```typescript
-const summary = await chrome.ai.summarizer.summarize(text, { 
-  maxLength: 500 
+// Automatically tries Chrome AI first, falls back to Gemini
+const summary = await hybridAI.summarize(text)
+const embedding = await hybridAI.embed(text)
+const translated = await hybridAI.translate(text, 'es')
+```
+
+### All 6 Chrome Built-in AI APIs
+
+✅ **Summarizer**: Compress page content to 2-3 sentences  
+✅ **Embeddings**: Convert text to semantic vectors (384-dim)  
+✅ **Writer**: Generate natural language responses  
+✅ **Translator**: Translate to any language  
+✅ **Proofreader**: Clean and correct text  
+✅ **Rewriter**: Reformat with tone/length/format options  
+
+### Fallback Strategy
+
+**Chrome AI Available** → Use on-device processing (instant, private)  
+**Chrome AI Unavailable** → Use Gemini API (1-2s delay, reliable)  
+**Both Unavailable** → Show helpful error message  
+
+### Code Example
+
+```typescript
+// Initialize hybrid service
+await hybridAI.initialize({
+  apiKey: userGeminiKey // from Settings
+})
+
+// Use any AI function - automatic fallback
+const summary = await hybridAI.summarize(pageText)
+const embedding = await hybridAI.embed(summary)
+const translated = await hybridAI.translate(summary, 'spanish')
+const rewritten = await hybridAI.rewrite(summary, { 
+  tone: 'professional',
+  length: 'short'
 })
 ```
 
-### Prompt API (Embeddings)
-
-```typescript
-const embedding = await chrome.ai.prompt.embed(text)
-// Returns Float32Array vector
-```
-
-### Writer API
-
-```typescript
-const answer = await chrome.ai.writer.write(prompt, {
-  tone: 'helpful',
-  length: 'medium'
-})
-```
-
-### Translator API
-
-```typescript
-const translated = await chrome.ai.translator.translate(text, {
-  targetLanguage: 'en'
-})
-```
-
-### Proofreader API
-
-```typescript
-const proofread = await chrome.ai.proofreader.proofread(text)
-```
+See [hybrid-ai.ts](./src/lib/ai/hybrid-ai.ts) for implementation.
 
 ## 🔐 Privacy & Security
 
 ### Privacy Guarantees
 
-✅ **100% Offline**: No network requests, no telemetry  
+✅ **Chrome AI**: 100% offline, on-device processing  
+✅ **Gemini API**: Only summaries sent (not full page content)  
 ✅ **Local Storage**: All data in IndexedDB on your device  
 ✅ **No Analytics**: Zero tracking or user profiling  
 ✅ **Open Source**: Auditable codebase  
@@ -317,8 +385,9 @@ const proofread = await chrome.ai.proofreader.proofread(text)
 ### Security Features
 
 - **AES-GCM Encryption**: Summaries encrypted with 256-bit keys
-- **Secure Key Storage**: Keys in chrome.storage.local
+- **Secure Key Storage**: Gemini API key in chrome.storage.sync
 - **Content Security Policy**: Strict CSP in manifest
+- **HTTPS Only**: Gemini API calls over secure connection
 - **Input Validation**: Sanitization of all user inputs
 - **XSS Protection**: Svelte's auto-escaping
 

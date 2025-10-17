@@ -5,7 +5,7 @@
 
 import { db } from '@/lib/db'
 import { memoryRepository } from '@/lib/db'
-import { chromeAI } from '@/lib/ai'
+import { hybridAI } from '@/lib/ai/hybrid-ai'
 import { cryptoService } from '@/lib/crypto'
 import { queryService } from '@/lib/query'
 import { logger } from '@/utils/logger'
@@ -33,20 +33,22 @@ async function initialize(): Promise<void> {
     await db.initialize()
     logger.info('Database initialized')
 
-    // Initialize AI services
-    await chromeAI.initialize()
-    logger.info('AI services initialized')
+    // Load Gemini API key
+    const stored = await chrome.storage.sync.get(['config', 'geminiApiKey'])
+    const config = { ...DEFAULT_CONFIG, ...stored.config }
+    await chrome.storage.sync.set({ config })
+
+    // Initialize AI services with Gemini config
+    await hybridAI.initialize({
+      apiKey: stored.geminiApiKey || '',
+    })
+    logger.info(`AI services initialized (provider: ${hybridAI.getCurrentProvider()})`)
 
     // Initialize encryption
     if (DEFAULT_CONFIG.encryptionEnabled) {
       await cryptoService.initialize()
       logger.info('Encryption initialized')
     }
-
-    // Load configuration
-    const stored = await chrome.storage.sync.get('config')
-    const config = { ...DEFAULT_CONFIG, ...stored.config }
-    await chrome.storage.sync.set({ config })
 
     logger.info('Extension initialized successfully')
   } catch (error) {
@@ -76,7 +78,7 @@ async function captureWebpage(tabId: number, url: string): Promise<void> {
     logger.info(`Capturing webpage: ${url}`)
 
     // Extract content using content script
-    const [response] = await chrome.tabs.sendMessage(tabId, {
+    const response = await chrome.tabs.sendMessage(tabId, {
       action: 'extractContent',
     })
 
@@ -95,11 +97,11 @@ async function captureWebpage(tabId: number, url: string): Promise<void> {
 
     // Generate summary
     logger.debug('Generating summary...')
-    const summary = await chromeAI.summarize(text, 500)
+    const summary = await hybridAI.summarize(text)
 
     // Generate embedding
     logger.debug('Generating embedding...')
-    const embedding = await chromeAI.embed(text)
+    const embedding = await hybridAI.embed(text)
 
     // Encrypt summary if enabled
     const finalSummary = DEFAULT_CONFIG.encryptionEnabled
@@ -229,21 +231,22 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         }
 
         case 'getCapabilities': {
-          const capabilities = chromeAI.getCapabilities()
-          sendResponse({ success: true, capabilities })
+          const capabilities = hybridAI.getCapabilities()
+          const provider = hybridAI.getCurrentProvider()
+          sendResponse({ success: true, capabilities, provider })
           break
         }
 
         case 'translate': {
           const { text, targetLanguage } = request.data
-          const translated = await chromeAI.translate(text, targetLanguage)
+          const translated = await hybridAI.translate(text, targetLanguage)
           sendResponse({ success: true, translated })
           break
         }
 
         case 'rewrite': {
           const { text, tone, length, format } = request.data
-          const rewritten = await chromeAI.rewrite(text, { tone, length, format })
+          const rewritten = await hybridAI.rewrite(text, { tone, length, format })
           sendResponse({ success: true, rewritten })
           break
         }
