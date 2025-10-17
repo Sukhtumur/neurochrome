@@ -3,7 +3,7 @@
  * Orchestrates the query flow: embedding → search → answer generation
  */
 
-import { chromeAI } from '@/lib/ai'
+import { hybridAI } from '@/lib/ai'
 import { vectorSearch } from '@/lib/vector'
 import { cryptoService } from '@/lib/crypto'
 import type { QueryRequest, QueryResponse } from '@/types'
@@ -20,7 +20,7 @@ export class QueryService {
       logger.info(`Processing query: "${request.query}"`)
 
       // Step 1: Generate query embedding
-      const queryEmbedding = await chromeAI.embed(request.query)
+      const queryEmbedding = await hybridAI.embed(request.query)
 
       // Step 2: Find similar memories
       const searchResults = await vectorSearch.findSimilar(queryEmbedding, {
@@ -77,13 +77,13 @@ ${context}
 
 Provide a concise, helpful answer. Reference the sources by number [1], [2], etc.`
 
-      const answer = await chromeAI.write(prompt, {
+      const answer = await hybridAI.write(prompt, {
         tone: 'helpful',
         length: 'medium',
       })
 
       // Step 6: Proofread the answer
-      const finalAnswer = await chromeAI.proofread(answer)
+      const finalAnswer = await hybridAI.proofread(answer)
 
       const processingTime = Date.now() - startTime
       logger.info(`Query processed in ${processingTime}ms`)

@@ -16,6 +16,21 @@ export class GeminiAIService {
   private model: string = 'gemini-1.5-flash-latest'
   private baseUrl: string = 'https://generativelanguage.googleapis.com/v1beta'
 
+  // Minimal type for chrome.storage used in extension context
+  private getChromeStorage(): { sync?: { get?: (k: string) => Promise<Record<string, unknown>>; set?: (v: Record<string, unknown>) => Promise<void> } } | null {
+    try {
+      const win = window as unknown as { chrome?: unknown }
+      // Narrow to unknown and check existence
+      const maybeChrome = (win.chrome as unknown) as { storage?: { sync?: { get?: (k: string) => Promise<Record<string, unknown>>; set?: (v: Record<string, unknown>) => Promise<void> } } } | undefined
+      if (maybeChrome && maybeChrome.storage && maybeChrome.storage.sync) {
+        return { sync: maybeChrome.storage.sync }
+      }
+      return null
+    } catch (e) {
+      return null
+    }
+  }
+
   /**
    * Initialize with API key
    */
@@ -24,7 +39,20 @@ export class GeminiAIService {
     if (config.model) {
       this.model = config.model
     }
-    
+    // Try to load cached model (if previously discovered)
+    try {
+      const storage = this.getChromeStorage()
+      if (storage?.sync?.get) {
+        const stored = await storage.sync.get('geminiModel')
+        if (!config.model && stored?.geminiModel) {
+          this.model = String(stored.geminiModel)
+          logger.info('Loaded cached Gemini model from storage:', this.model)
+        }
+      }
+    } catch (err) {
+      // ignore storage errors
+      logger.debug('Could not read cached Gemini model:', err)
+    }
     if (!this.apiKey) {
       logger.warn('Gemini API key not provided')
       return false
@@ -45,12 +73,10 @@ export class GeminiAIService {
    * Test API connection
    */
   private async testConnection(): Promise<void> {
-    const response = await fetch(
-      `${this.baseUrl}/models?key=${this.apiKey}`
-    )
-    
+    const response = await fetch(`${this.baseUrl}/models?key=${this.apiKey}`)
     if (!response.ok) {
-      throw new Error(`Gemini API test failed: ${response.statusText}`)
+      const text = await response.text()
+      throw new Error(`Gemini API test failed: ${response.status} ${response.statusText} - ${text}`)
     }
   }
 
@@ -235,40 +261,148 @@ export class GeminiAIService {
    * Generate content using Gemini API
    */
   private async generateContent(prompt: string): Promise<string> {
-    const response = await fetch(
-      `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
-      {
+    // Helper to call generateContent for the configured model
+    const callGenerate = async (modelName: string) => {
+      const url = `${this.baseUrl}/models/${modelName}:generateContent?key=${this.apiKey}`
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            maxOutputTokens: 1024,
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+        }),
+      })
+
+      return res
+    }
+
+    // First attempt with current model
+    let response = await callGenerate(this.model)
+
+    // If model not found (404) or quota exceeded (429), try to discover a better model and retry once
+    if (response.status === 404 || response.status === 429) {
+      try {
+        const reason = response.status === 404 ? 'not supported by API' : 'quota exceeded'
+        logger.warn(`Configured Gemini model (${this.model}) ${reason}, attempting to discover available models`)
+        const selected = await this.discoverAndSelectModel()
+        if (selected && selected !== this.model) {
+          logger.info('Discovered alternative Gemini model:', selected)
+          this.model = selected
+          // Cache selected model
+          try {
+            const storage = this.getChromeStorage()
+            if (storage?.sync?.set) {
+              await storage.sync.set({ geminiModel: selected })
+            }
+          } catch (err) {
+            logger.debug('Failed to cache selected Gemini model:', err)
           }
-        })
+          // Retry with discovered model
+          response = await callGenerate(this.model)
+        }
+      } catch (err) {
+        logger.error('Model discovery failed:', err)
+        // fallthrough to error handling below
       }
-    )
+    }
 
     if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Gemini API error: ${error}`)
+      const errorText = await response.text()
+      throw new Error(`Gemini API error: ${response.status} ${response.statusText} - ${errorText}`)
     }
 
     const data = await response.json()
-    
     if (!data.candidates || data.candidates.length === 0) {
       throw new Error('No response from Gemini API')
     }
 
     const text = data.candidates[0].content.parts[0].text
     return text.trim()
+  }
+
+  /**
+   * Discover available models from the ListModels endpoint and return a model
+   * name that supports generateContent (or a reasonable Gemini model).
+   */
+  private async discoverAndSelectModel(): Promise<string | null> {
+    logger.debug('Listing Gemini models from API...')
+    const res = await fetch(`${this.baseUrl}/models?key=${this.apiKey}`)
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`ListModels failed: ${res.status} ${res.statusText} - ${text}`)
+    }
+
+    const data = await res.json()
+    const models = Array.isArray(data.models) ? data.models : data.items || []
+
+    // Helper to strip 'models/' prefix
+    const stripPrefix = (name: string): string => {
+      return name.startsWith('models/') ? name.substring(7) : name
+    }
+
+    // Helper to check if model is experimental (avoid quota issues)
+    const isExperimental = (name: string): boolean => {
+      const lower = name.toLowerCase()
+      return lower.includes('-exp') || lower.includes('experimental') || lower.includes('preview')
+    }
+
+    // Helper to get model priority (lower is better)
+    const getModelPriority = (name: string): number => {
+      const lower = name.toLowerCase()
+      // Prefer stable flash models (best quota/performance balance)
+      if (lower.includes('1.5-flash')) return 1
+      if (lower.includes('1.5-pro')) return 2
+      if (lower.includes('2.0-flash')) return 3
+      if (lower.includes('flash')) return 4
+      if (lower.includes('pro') && !isExperimental(name)) return 5
+      if (lower.includes('gemini') && !isExperimental(name)) return 6
+      // Experimental models last (they have lower quotas)
+      if (isExperimental(name)) return 100
+      return 50
+    }
+
+    // Collect all viable models with generateContent support
+    const viableModels: Array<{ name: string; priority: number }> = []
+    
+    for (const m of models) {
+      let name = m.name || m.model || ''
+      const supported = m.supportedMethods || m.methods || []
+      
+      if (typeof name === 'string' && name) {
+        name = stripPrefix(name)
+        
+        // Only consider models with generateContent support
+        if (Array.isArray(supported) && supported.includes('generateContent')) {
+          viableModels.push({ name, priority: getModelPriority(name) })
+        }
+      }
+    }
+
+    // Sort by priority and return best model
+    if (viableModels.length > 0) {
+      viableModels.sort((a, b) => a.priority - b.priority)
+      const selected = viableModels[0].name
+      logger.info(`Selected model: ${selected} (priority: ${viableModels[0].priority})`)
+      logger.debug(`Available models: ${viableModels.map(m => `${m.name}(${m.priority})`).join(', ')}`)
+      return selected
+    }
+
+    // Fallback: just find any gemini model
+    for (const m of models) {
+      let name = m.name || m.model || ''
+      if (typeof name === 'string' && name) {
+        name = stripPrefix(name)
+        if (name.toLowerCase().includes('gemini') && !isExperimental(name)) {
+          logger.debug('Using gemini model via name heuristic:', name)
+          return name
+        }
+      }
+    }
+
+    logger.warn('No suitable models found')
+    return null
   }
 
   /**
