@@ -438,9 +438,9 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ## 📞 Contact
 
-- **Author**: Your Name
-- **Email**: your.email@example.com
-- **GitHub**: [@yourusername](https://github.com/yourusername)
+- **Author**: Sukhtumur N
+- **Email**: haruschatten@gmail.com
+- **GitHub**: [@yourusername](https://github.com/Sukhtumur)
 - **Demo Video**: [YouTube Link]
 
 ---
