@@ -440,7 +440,7 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 - **Author**: Sukhtumur N
 - **Email**: haruschatten@gmail.com
-- **GitHub**: [@yourusername](https://github.com/Sukhtumur)
+- **GitHub**: [@Sukhtumur](https://github.com/Sukhtumur)
 - **Demo Video**: [YouTube Link]
 
 ---
